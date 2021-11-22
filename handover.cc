@@ -1,11 +1,16 @@
-#include <ns3/core-module.h>
-#include <ns3/network-module.h>
-#include <ns3/mobility-module.h>
-#include <ns3/lte-module.h>
-#include <ns3/config-store.h>
-#include <ns3/netanim-module.h>
-#include <ns3/internet-stack-helper.h>
-#include <ns3/ipv4-static-routing-helper.h>
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/lte-module.h"
+#include "ns3/lte-module.h"
+#include "ns3/flow-monitor-module.h"
+#include "ns3/applications-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/config-store-module.h"
+#include "ns3/netanim-module.h"
+#include "ns3/gnuplot.h"
+#include <math.h>
 
 using namespace ns3;
 
@@ -17,11 +22,6 @@ int main (int argc, char *argv[]) {
 
 	// Create Evolved Packet Core (EPC), use the EPC Helper class to take care of creating the EPC entities and network.
 	Ptr<PointToPointEpcHelper> epcHelper = CreateObject<PointToPointEpcHelper>();
-
-
-	//Setup EPC to the LTE
-	lteHelper->SetEpcHelper(epcHelper); //TODO: ERROR!
-
 
 	//Configure Scheduler and Handover algo
 	lteHelper->SetSchedulerType ("ns3::PssFfMacScheduler");    // PSS scheduler
@@ -39,9 +39,26 @@ int main (int argc, char *argv[]) {
 	Ptr<Node> remoteHost = remoteHostContainer.Get (0);
 	InternetStackHelper internet;
 	internet.Install (remoteHostContainer);	
- 
-	//Static Routing Helper
-	Ipv4StaticRoutingHelper ipv4RoutingHelper;	
+
+	// Create the internet
+	PointToPointHelper p2ph;
+	p2ph.SetDeviceAttribute ("DataRate", DataRateValue (DataRate ("100Gb/s")));
+	p2ph.SetDeviceAttribute ("Mtu", UintegerValue (1500));
+	p2ph.SetChannelAttribute ("Delay", TimeValue (Seconds (0.010)));
+	NetDeviceContainer internetDevices = p2ph.Install (pgw, remoteHost);
+	Ipv4AddressHelper ipv4h;
+	ipv4h.SetBase ("1.0.0.0", "255.0.0.0");
+	Ipv4InterfaceContainer internetIpIfaces = ipv4h.Assign (internetDevices);
+	// interface 0 is localhost, 1 is the p2p device
+	//Ipv4Address remoteHostAddr = internetIpIfaces.GetAddress (1);
+
+	// Routing of the Internet Host (towards the LTE network)
+  Ipv4StaticRoutingHelper ipv4RoutingHelper;
+  Ptr<Ipv4StaticRouting> remoteHostStaticRouting = ipv4RoutingHelper.GetStaticRouting (remoteHost->GetObject<Ipv4> ());
+  // interface 0 is localhost, 1 is the p2p device
+  remoteHostStaticRouting->AddNetworkRouteTo (Ipv4Address ("7.0.0.0"), Ipv4Mask ("255.0.0.0"), 1);
+
+
 
 	// Empty nodes without LTE Protocol stack
 	// Create Node objects for eNBs, create 3 eNB Nodes.
@@ -57,11 +74,24 @@ int main (int argc, char *argv[]) {
 	// Mobility model for all nodes
 	// Place all nodes at (0,0,0) coordinates.
 	MobilityHelper mobility;
-	mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
-	mobility.Install (enbNodes);
-	mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");	
-	mobility.Install (ueNodes);
+	mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
+                                 "MinX", DoubleValue (10.0),
+                                 "MinY", DoubleValue (10.0),
+                                 "DeltaX", DoubleValue (12.0),
+                                 "DeltaY", DoubleValue (10.0),
+                                 "GridWidth", UintegerValue (5),
+                                 "LayoutType", StringValue ("RowFirst"));
 
+	mobility.SetMobilityModel ("ns3::RandomWalk2dMobilityModel", "Bounds", RectangleValue (Rectangle (-500, 500, -250, 500)));
+  mobility.Install (ueNodes);
+  mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  mobility.Install (enbNodes);
+/*
+mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+mobility.Install (enbNodes);
+mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");	
+mobility.Install (ueNodes);
+*/
 
 	// Install LTE protocol stack on eNBs
 	NetDeviceContainer enbDevs;
@@ -74,11 +104,13 @@ int main (int argc, char *argv[]) {
 
 
 	// Attach UEs to eNB, configure each UE according to the eNB configs, create RRC Connection between them.
-	lteHelper->Attach (ueDevs, enbDevs.Get (0));
+	lteHelper->Attach (ueDevs.Get(0), enbDevs.Get (0));
 
+	lteHelper->Attach (ueDevs.Get(1), enbDevs.Get (1));
 
-
+	lteHelper->Attach (ueDevs.Get(2), enbDevs.Get (2));
 	
+	lteHelper->Attach (ueDevs.Get(3), enbDevs.Get (2));
 	//Setup IPv4 to all UEs, assign IP Address to UEs
 	for (uint32_t u = 0; u < ueNodes.GetN(); ++u) {
 		Ptr<Node> ue = ueNodes.Get(u);
@@ -96,13 +128,30 @@ int main (int argc, char *argv[]) {
 	EpsBearer bearer (q);
 	lteHelper-> ActivateDataRadioBearer(ueDevs, bearer);
 
+	//Setup EPC to the LTE
+	lteHelper->SetEpcHelper(epcHelper);
+
+
 
 	// Set the stop time, otherwise it will run forever.
-	Simulator::Stop (Seconds(0.005));
+	Simulator::Stop (Seconds(30.0));
 
 
 	//Setup NetAnim
 	AnimationInterface anim("handover.xml");
+	anim.SetMaxPktsPerTraceFile(9999999999);
+
+	// Set Labels to Nodes	
+	anim.UpdateNodeDescription(pgw, "Packet Data Network Gateway (PGW)");
+	anim.UpdateNodeDescription(enbNodes.Get(0), "eNB 0");
+	anim.UpdateNodeDescription(enbNodes.Get(1), "eNB 1");
+	anim.UpdateNodeDescription(enbNodes.Get(2), "eNB 2");
+	anim.UpdateNodeDescription(ueNodes.Get(0), "UE 0");
+	anim.UpdateNodeDescription(ueNodes.Get(1), "UE 1");
+	anim.UpdateNodeDescription(ueNodes.Get(2), "UE 2");
+	anim.UpdateNodeDescription(ueNodes.Get(3), "UE 3");
+
+	// Set constant positions
 	anim.SetConstantPosition(pgw, 91.0, 35.0);	
 
 	anim.SetConstantPosition(enbNodes.Get(0), 20.0, 20.0);
