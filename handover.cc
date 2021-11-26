@@ -24,7 +24,7 @@ int main (int argc, char *argv[]) {
 	Ptr<PointToPointEpcHelper> epcHelper = CreateObject<PointToPointEpcHelper>();
 
 	//Configure Scheduler and Handover algo
-	lteHelper->SetSchedulerType ("ns3::PssFfMacScheduler");    // PSS scheduler
+	lteHelper->SetSchedulerType ("ns3::FdMtFfMacScheduler");    // FD-MT scheduler
 	lteHelper->SetHandoverAlgorithmType ("ns3::A2A4RsrqHandoverAlgorithm");
 	lteHelper->SetHandoverAlgorithmAttribute ("ServingCellThreshold", UintegerValue (30));
 	lteHelper->SetHandoverAlgorithmAttribute ("NeighbourCellOffset", UintegerValue (1));
@@ -69,10 +69,8 @@ int main (int argc, char *argv[]) {
 	// Create Node objects for UEs, create 4 user nodes.
 	NodeContainer ueNodes;
 	ueNodes.Create (4);
-	internet.Install (ueNodes);
 
 	// Mobility model for all nodes
-	// Place all nodes at (0,0,0) coordinates.
 	MobilityHelper mobility;
 	mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
                                  "MinX", DoubleValue (10.0),
@@ -103,14 +101,10 @@ mobility.Install (ueNodes);
 	ueDevs = lteHelper->InstallUeDevice (ueNodes);
 
 
-	// Attach UEs to eNB, configure each UE according to the eNB configs, create RRC Connection between them.
-	lteHelper->Attach (ueDevs.Get(0), enbDevs.Get (0));
-
-	lteHelper->Attach (ueDevs.Get(1), enbDevs.Get (1));
-
-	lteHelper->Attach (ueDevs.Get(2), enbDevs.Get (2));
+	// TODO: Attach UEs to eNB, configure each UE according to the eNB configs, create RRC Connection between them.
+	lteHelper->Attach (ueDevs, enbDevs.Get(0));
+	internet.Install(ueNodes);
 	
-	lteHelper->Attach (ueDevs.Get(3), enbDevs.Get (2));
 	//Setup IPv4 to all UEs, assign IP Address to UEs
 	for (uint32_t u = 0; u < ueNodes.GetN(); ++u) {
 		Ptr<Node> ue = ueNodes.Get(u);
@@ -142,6 +136,7 @@ mobility.Install (ueNodes);
 	anim.SetMaxPktsPerTraceFile(9999999999);
 
 	// Set Labels to Nodes	
+	anim.UpdateNodeDescription(remoteHost, "Remote Host Container");
 	anim.UpdateNodeDescription(pgw, "Packet Data Network Gateway (PGW)");
 	anim.UpdateNodeDescription(enbNodes.Get(0), "eNB 0");
 	anim.UpdateNodeDescription(enbNodes.Get(1), "eNB 1");
