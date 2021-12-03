@@ -7,7 +7,7 @@
 #include "ns3/point-to-point-module.h"
 #include "ns3/config-store-module.h"
 #include "ns3/netanim-module.h"
-#include <stdlib.h>     /* srand, rand */
+#include <stdlib.h>
 
 using namespace ns3;
 
@@ -104,11 +104,6 @@ NotifyHandoverEndOkEnb (std::string context,
 
 int main (int argc, char *argv[]) {
  
-// The values returned by a uniformly distributed random
-// variable should always be within the range
-//
-//     [min, max)  .
-//
 
   uint16_t numberOfUes = 1;
   uint16_t numberOfEnbs = 6;
@@ -119,9 +114,6 @@ int main (int argc, char *argv[]) {
   double simTime = (double)(numberOfEnbs + 1) * distance / speed;
   double enbTxPowerDbm = 50.0;
 
-  // change some default attributes so that they are reasonable for
-  // this scenario, but do this before processing command line
-  // arguments, so that the user is allowed to override these settings
   Config::SetDefault ("ns3::UdpClient::Interval", TimeValue (MilliSeconds (10)));
   Config::SetDefault ("ns3::UdpClient::MaxPackets", UintegerValue (1000000));
   Config::SetDefault ("ns3::LteHelper::UseIdealRrc", BooleanValue (true));
@@ -138,7 +130,7 @@ int main (int argc, char *argv[]) {
   Ptr<LteHelper> lteHelper = CreateObject<LteHelper> ();
   Ptr<PointToPointEpcHelper> epcHelper = CreateObject<PointToPointEpcHelper> ();
   lteHelper->SetEpcHelper (epcHelper);
-  lteHelper->SetSchedulerType ("ns3::RrFfMacScheduler");
+  lteHelper->SetSchedulerType ("ns3::PfFfMacScheduler");
   lteHelper->SetHandoverAlgorithmType ("ns3::A3RsrpHandoverAlgorithm");
   lteHelper->SetHandoverAlgorithmAttribute ("Hysteresis", DoubleValue (3.0));
   lteHelper->SetHandoverAlgorithmAttribute ("TimeToTrigger", TimeValue (MilliSeconds (256)));
@@ -167,7 +159,6 @@ int main (int argc, char *argv[]) {
   // Routing of the Internet Host (towards the LTE network)
   Ipv4StaticRoutingHelper ipv4RoutingHelper;
   Ptr<Ipv4StaticRouting> remoteHostStaticRouting = ipv4RoutingHelper.GetStaticRouting (remoteHost->GetObject<Ipv4> ());
-  // interface 0 is localhost, 1 is the p2p device
   remoteHostStaticRouting->AddNetworkRouteTo (Ipv4Address ("7.0.0.0"), Ipv4Mask ("255.0.0.0"), 1);
 
   NodeContainer ueNodes;
@@ -228,9 +219,6 @@ int main (int argc, char *argv[]) {
   uint16_t dlPort = 10000;
   uint16_t ulPort = 20000;
 
-  // randomize a bit start times to avoid simulation artifacts
-  // (e.g., buffer overflows due to packet transmissions happening
-  // exactly at the same time)
   Ptr<UniformRandomVariable> startTimeSeconds = CreateObject<UniformRandomVariable> ();
   startTimeSeconds->SetAttribute ("Min", DoubleValue (0));
   startTimeSeconds->SetAttribute ("Max", DoubleValue (0.010));
@@ -239,7 +227,6 @@ int main (int argc, char *argv[]) {
     {
       Ptr<Node> ue = ueNodes.Get (u);
 
-      // Set the default gateway for the UE
       Ptr<Ipv4StaticRouting> ueStaticRouting = ipv4RoutingHelper.GetStaticRouting (ue->GetObject<Ipv4> ());
       ueStaticRouting->SetDefaultRoute (epcHelper->GetUeDefaultGatewayAddress (), 1);
 
@@ -281,11 +268,10 @@ int main (int argc, char *argv[]) {
           serverApps.Start (startTime);
           clientApps.Start (startTime);
 
-        } // end for b
+        } 
     }
 
 
-  // Add X2 interface
   lteHelper->AddX2Interface (enbNodes);
 
   lteHelper->EnablePhyTraces ();
@@ -297,7 +283,6 @@ int main (int argc, char *argv[]) {
   Ptr<RadioBearerStatsCalculator> pdcpStats = lteHelper->GetPdcpStats ();
   pdcpStats->SetAttribute ("EpochDuration", TimeValue (Seconds (1.0)));
 
-  // connect custom trace sinks for RRC connection establishment and handover notification
   Config::Connect ("/NodeList/*/DeviceList/*/LteEnbRrc/ConnectionEstablished",
                    MakeCallback (&NotifyConnectionEstablishedEnb));
   Config::Connect ("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
@@ -314,11 +299,9 @@ int main (int argc, char *argv[]) {
 
   Simulator::Stop (Seconds (simTime));
 
-
-  // NetAnim
+  //NetAnim
   AnimationInterface anim("automatic-handover.xml");
 
-  // Set labels and colors to nodes
   anim.UpdateNodeDescription(ueNodes.Get(0), "Michael's Phone");
   anim.UpdateNodeColor(ueNodes.Get(0), 0, 0, 255);
 
